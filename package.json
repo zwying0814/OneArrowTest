@@ -1,0 +1,30 @@
+{
+  "name": "vite-project",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@leafer-in/editor": "^1.8.0",
+    "@leafer-in/find": "^1.8.0",
+    "@leafer-in/flow": "^1.8.0",
+    "@leafer-in/resize": "^1.8.0",
+    "@leafer-in/viewport": "^1.8.0",
+    "@tailwindcss/vite": "^4.1.11",
+    "leafer-ui": "^1.8.0",
+    "tailwindcss": "^4.1.11",
+    "vue": "^3.5.17"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/tsconfig": "^0.7.0",
+    "eruda": "^3.4.3",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.0",
+    "vue-tsc": "^2.2.10"
+  }
+}
