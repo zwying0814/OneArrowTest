@@ -1,7 +1,6 @@
 <script setup lang='ts'>
 import { onMounted, ref, computed } from 'vue';
 import { useTargetApp } from '../composables/useTargetApp';
-import type { ScoreItem } from '../types';
 
 // DOM 元素引用
 const boxRef = ref<HTMLDivElement | null>(null);
@@ -10,8 +9,6 @@ const arrowRef = ref<HTMLDivElement | null>(null);
 // 使用射击靶应用组合式函数
 const {
   scoreList,
-  frameSize,
-  appInstance,
   currentDraggingIndex,
   initializeApp,
   clearScores,
