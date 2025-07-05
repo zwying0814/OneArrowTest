@@ -1,137 +1,184 @@
-import {Ellipse, type Frame, Group, Line, PointerEvent} from "leafer-ui";
-import {ShotMarker} from "./ShotMarker.ts";
-import type {Ref} from "vue";
+import { Ellipse, Group, Line, PointerEvent, type IStrokeAlign } from "leafer-ui";
+import { ShotMarker } from "./ShotMarker";
+import type { Ref } from "vue";
+import type { Point, ScoreItem } from "../types";
+import {
+  RING_CONFIGS,
+  RING_STYLE,
+  TARGET_CENTER_CONFIG,
+  BASE_RING_SIZE,
+  Z_INDEX
+} from "../constants/config";
+import {
+  calculateCenterPoint,
+  generateElementId,
+  calculateRingSize,
+  calculateZIndex,
+  parseElementId
+} from "../utils/helpers";
 
-// 靶环配置
-interface RingConfig {
-    fill: string; // 填充颜色
-    range: number; // 环数
-    high:string; // 高亮色
-}
-
+/**
+ * 射击靶类 - 负责创建和管理射击靶的显示和交互
+ */
 export class ShotRange {
-    private readonly group: Group
-    private point: { x: number; y: number };
-    private readonly targetCenter: Group
-    private readonly rings: Ellipse[]
-    private frame: Frame
-    private scoreList:Ref<{
-        id: number,
-        score: number
-    }[]>
-    private dotIndex:number = 0
+  private readonly group: Group;
+  private readonly centerPoint: Point;
+  private readonly targetCenter: Group;
+  private readonly rings: Ellipse[];
+  private readonly scoreList: Ref<ScoreItem[]>;
+  private readonly currentDraggingIndex: Ref<number>;
+  private dotIndex: number = 0;
 
-    constructor(_frame: Frame,_scoreList:Ref<{
-        id: number,
-        score: number
-    }[]>) {
-        this.frame = _frame
-        this.scoreList = _scoreList
-        this.point = {
-            x: (_frame.width || 500) / 2,
-            y: (_frame.height || 500) / 2,
-        }
-        this.targetCenter = this.createTargetCenter()
-        this.rings = this.createTargetRings()
-        this.group = new Group({
-            children: [
-                ...this.rings,
-                this.targetCenter,
-            ]
+  /**
+   * 构造函数
+   * @param scoreList 分数列表的响应式引用
+   * @param currentDraggingIndex 当前拖拽索引的响应式引用
+   */
+  constructor(scoreList: Ref<ScoreItem[]>, currentDraggingIndex: Ref<number>) {
+    this.scoreList = scoreList;
+    this.currentDraggingIndex = currentDraggingIndex;
+    this.centerPoint = calculateCenterPoint({
+      width: 500,
+      height: 500
+    });
+
+    // 创建靶心和靶环
+    this.targetCenter = this.createTargetCenter();
+    this.rings = this.createTargetRings();
+
+    // 创建主组合
+    this.group = new Group({
+      children: [
+        ...this.rings,
+        this.targetCenter,
+      ]
+    });
+
+    // 初始化事件监听
+    this.initEvents();
+  }
+
+  /**
+   * 初始化事件监听
+   * 处理点击射击靶的事件，创建射击标记
+   */
+  private initEvents(): void {
+    this.group.on(PointerEvent.TAP, (e) => {
+      // 获取点击位置
+      const clickPoint = e.getPagePoint(this.group);
+
+      // 创建射击标记
+      const shotMarker = new ShotMarker(
+        clickPoint,
+        this.group,
+        this.scoreList,
+        this.currentDraggingIndex,
+        ++this.dotIndex
+      );
+
+      // 添加到当前组合中
+      this.group.add(shotMarker.getGroup());
+      
+      const hit = this.group.pick(clickPoint, {
+        through: true
+      })
+      const bgArr = hit.throughPath?.list.filter(x => x.id !== 'dot' && x.id !== '' && x.id !== 'active-bg')
+
+      const hitTarget = bgArr?.pop()
+
+      // 解析分数并添加到分数列表
+      const { score } = parseElementId(hitTarget?.id || '');
+      this.scoreList.value.push({
+        id: this.dotIndex,
+        score: score,
+      });
+    });
+  }
+
+  /**
+   * 创建靶心（10环中心区域）
+   * @returns 靶心组合元素
+   */
+  private createTargetCenter(): Group {
+    return new Group({
+      x: this.centerPoint.x,
+      y: this.centerPoint.y,
+      zIndex: TARGET_CENTER_CONFIG.zIndex,
+      fill: 'transparent',
+      around: 'center',
+      id: TARGET_CENTER_CONFIG.id,
+      children: [
+        // 靶心圆环
+        new Ellipse({
+          width: TARGET_CENTER_CONFIG.size,
+          height: TARGET_CENTER_CONFIG.size,
+          fill: 'transparent',
+          around: 'center',
+          stroke: {
+            type: 'solid',
+            color: RING_STYLE.strokeColor.default
+          },
+          id: TARGET_CENTER_CONFIG.id,
+          strokeWidth: RING_STYLE.strokeWidth,
+          strokeAlign: RING_STYLE.strokeAlign as IStrokeAlign,
+        }),
+        // 水平十字线
+        new Line({
+          width: TARGET_CENTER_CONFIG.crosshairLength,
+          strokeWidth: RING_STYLE.strokeWidth,
+          stroke: RING_STYLE.strokeColor.default,
+          around: 'center',
+          id: TARGET_CENTER_CONFIG.id,
+        }),
+        // 垂直十字线
+        new Line({
+          width: TARGET_CENTER_CONFIG.crosshairLength,
+          rotation: 90,
+          strokeWidth: RING_STYLE.strokeWidth,
+          stroke: RING_STYLE.strokeColor.default,
+          around: 'center',
+          id: TARGET_CENTER_CONFIG.id,
         })
-        this.initEvents()
-    }
+      ]
+    });
+  }
 
-    private initEvents() {
-        this.group.on(PointerEvent.TAP, (e) => {
-            const point = e.getPagePoint(this.group)
-            const shotMark = new ShotMarker(this.frame,point,this.group,this.scoreList,++this.dotIndex)
-            this.frame.add(shotMark.getGroup());
-            const currentScore = parseInt(e.target.id.split('-')[0]) || 0;
-            this.scoreList.value.push({
-                id:this.dotIndex,
-                score: currentScore,
-            });
-        })
-    }
+  /**
+   * 创建靶环
+   * 从内到外创建10个环，每个环代表不同的分数区域
+   * @returns 靶环数组
+   */
+  private createTargetRings(): Ellipse[] {
+    return RING_CONFIGS.map((config, index) => {
+      const { width, height } = calculateRingSize(index, BASE_RING_SIZE);
+      const zIndex = calculateZIndex(Z_INDEX.BASE_RING, index + 1);
 
-    private createTargetCenter() {
-        return new Group({
-            x: this.point.x,
-            y: this.point.y,
-            zIndex: 101,
-            fill: 'transparent',
-            around: 'center',
-            id: '10',
-            children: [
-                new Ellipse({
-                    width: 40 - 20,
-                    height: 40 - 20,
-                    fill: 'transparent',
-                    around: 'center',
-                    stroke: {
-                        type: 'solid',
-                        color: '#000'
-                    },
-                    id: '10',
-                    strokeWidth: 0.5,
-                    strokeAlign: 'inside',
-                }),
-                new Line({
-                    width: 5,
-                    strokeWidth: 0.5,
-                    stroke: '#000',
-                    around: 'center',
-                    id: '10',
-                }),
-                new Line({
-                    width: 5,
-                    rotation: 90,
-                    strokeWidth: 0.5,
-                    stroke: '#000',
-                    around: 'center',
-                    id: '10',
-                })
-            ]
-        })
-    }
+      return new Ellipse({
+        width,
+        height,
+        fill: config.fill,
+        around: 'center',
+        stroke: {
+          type: 'solid',
+          // 4环使用特殊的白色描边，其他使用默认黑色
+          color: config.range === 4 ? RING_STYLE.strokeColor.special : RING_STYLE.strokeColor.default
+        },
+        strokeWidth: RING_STYLE.strokeWidth,
+        strokeAlign: RING_STYLE.strokeAlign as IStrokeAlign,
+        x: this.centerPoint.x,
+        y: this.centerPoint.y,
+        // ID格式：分数-高亮色-填充色，便于后续解析
+        id: generateElementId(config.range, config.high, config.fill),
+        zIndex
+      });
+    });
+  }
 
-    private createTargetRings() {
-        // 靶环配置（从内到外，一个一个环绘制，颜色两两相同）
-        const ringConfigs: RingConfig[] = [
-            {fill: '#fdc700',high:'#fff085', range: 10},
-            {fill: '#fdc700',high:'#fff085', range: 9},
-            {fill: '#ff6467',high:'#ffc9c9', range: 8},
-            {fill: '#ff6467',high:'#ffc9c9', range: 7},
-            {fill: '#02abe2',high:'#8ec5ff', range: 6},
-            {fill: '#02abe2',high:'#8ec5ff', range: 5},
-            {fill: '#000',high:'#314158', range: 4},
-            {fill: '#000',high:'#314158', range: 3},
-            {fill: '#fff',high:'#f5f5f4', range: 2},
-            {fill: '#fff',high:'#f5f5f4', range: 1}
-        ];
-
-        return ringConfigs.map((config, idx) => {
-            return new Ellipse({
-                width: 40 * (idx + 1),
-                height: 40 * (idx + 1),
-                fill: config.fill,
-                around: 'center',
-                stroke: {
-                    type: 'solid',
-                    color: config.range === 4 ? '#fff' : '#000'
-                },
-                strokeWidth: 0.5,
-                strokeAlign: 'inside',
-                x: this.point.x,
-                y: this.point.y,
-                id: `${config.range.toString()}-${config.high}-${config.fill}`, // 顺带保存颜色
-                zIndex: 100 - (idx + 1)
-            });
-        });
-    }
-
-    public getGroup(): Group {
-        return this.group
-    }
+  /**
+   * 获取射击靶的组合元素
+   * @returns 包含所有靶环和靶心的组合
+   */
+  public getGroup(): Group {
+    return this.group;
+  }
 }
