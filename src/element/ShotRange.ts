@@ -65,7 +65,7 @@ export class ShotRange {
   private initEvents(): void {
     this.group.on(PointerEvent.TAP, (e) => {
       // 获取点击位置
-      const clickPoint = e.getPagePoint(this.group);
+      const clickPoint = e.getPagePoint();
 
       // 创建射击标记
       const shotMarker = new ShotMarker(
@@ -79,7 +79,10 @@ export class ShotRange {
       // 添加到当前组合中
       this.group.add(shotMarker.getGroup());
       
-      const hit = this.group.pick(clickPoint, {
+      const hit = this.group.pick({
+        x:e.x,
+        y:e.y
+      }, {
         through: true
       })
       const bgArr = hit.throughPath?.list.filter(x => x.id !== 'dot' && x.id !== '' && x.id !== 'active-bg')
